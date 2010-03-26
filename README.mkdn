@@ -1,14 +1,14 @@
 # NAME
 
-Redis::Fast -
+Redis::YA -
 
 # SYNOPSIS
 
-  use Redis::Fast;
+  use Redis::YA;
 
 # DESCRIPTION
 
-Redis::Fast is
+Redis::YA is yet another redis client library.
 
 # AUTHOR
 

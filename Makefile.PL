@@ -1,11 +1,11 @@
 use inc::Module::Install;
-name 'Redis-Fast';
-all_from 'lib/Redis/Fast.pm';
+name 'Redis-YA';
+all_from 'lib/Redis/YA.pm';
 
-# requires '';
+requires 'IO::Socket::INET' => 1.31;;
 
 
-readme_markdown_from 'lib/Redis/Fast.pm';
+readme_markdown_from 'lib/Redis/YA.pm';
 tests 't/*.t t/*/*.t t/*/*/*.t t/*/*/*/*.t';
 test_requires 'Test::More';
 test_requires 'YAML';

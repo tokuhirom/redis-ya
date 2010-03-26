@@ -1,9 +1,9 @@
 use strict;
 use warnings;
 use Test::More;
-use Redis::Fast;
+use Redis::YA;
 
-my $redis = Redis::Fast->new(timeout => 1);
+my $redis = Redis::YA->new(timeout => 1);
 $redis->del("HEY");
 $redis->set("HEY", "YO");
 is $redis->get("HEY"), "YO";

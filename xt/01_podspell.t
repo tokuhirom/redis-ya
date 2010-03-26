@@ -6,7 +6,7 @@ $ENV{LANG} = 'C';
 all_pod_files_spelling_ok('lib');
 __DATA__
 Tokuhiro Matsuno
-Redis::Fast
+Redis::YA
 tokuhirom
 AAJKLFJEF
 GMAIL
@@ -30,3 +30,4 @@ kazeburo
 daisuke
 maki
 TODO
+redis

@@ -1,4 +1,4 @@
 use strict;
 use Test::More tests => 1;
 
-BEGIN { use_ok 'Redis::Fast' }
+BEGIN { use_ok 'Redis::YA' }

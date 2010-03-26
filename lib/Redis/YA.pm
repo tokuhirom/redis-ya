@@ -1,4 +1,4 @@
-package Redis::Fast;
+package Redis::YA;
 use strict;
 use warnings;
 use 5.00800;
@@ -22,14 +22,12 @@ our $BULK_COMMAND = {
     ZINCRBY   => 1,
     APPEND    => 1,
 };
-our $BUFSIZ = 1024;
 
 sub new {
     my $class = shift;
     my %args = @_ == 1 ? %{$_[0]} : @_;
     my $self = bless {
         buf     => '',
-        timeout => 10,
         server  => '127.0.0.1:6379',
         %args
     }, $class;
@@ -38,8 +36,6 @@ sub new {
         PeerAddr => $self->{server},
         Proto    => 'tcp',
     ) || die "Cannot open socket($self->{server}): $!";
-    $self->{sock}->blocking(0);
-    $self->{sock}->autoflush(1);
 
     return $self;
 }
@@ -75,7 +71,7 @@ sub _send_command {
             $command . ' ' . join( ' ', @args ) . "\r\n";
         }
     };
-    $self->_write_all($send);
+    print {$sock} $send;
 
     if ( $command eq 'QUIT' ) {
         close($sock) || die "can't close socket: $!";
@@ -86,53 +82,13 @@ sub _send_command {
     return $self->_read_reply();
 }
 
-sub _write_all {
-    my ($self, $buf) = @_;
-    my $len = length($buf);
-    my $offset = 0;
-    my $win = '';
-    vec($win, fileno($self->{sock}), 1) = 1;
-    my $wout;
-    do {
-        my $done = $self->{sock}->syswrite( $buf, $len, $offset );
-        $len -= $done;
-        $offset += $done;
-
-        if ($len > 0) {
-            unless (select(undef, $wout=$win, undef, $self->{timeout})) {
-                Carp::confess("[$self->{working_command}] Cannot write to socket by timeout: $self->{server}");
-            }
-        }
-    } while ($len > 0);
-}
-
-sub _read_more {
-    my $self = shift;
-
-    my $done = sysread( $self->{sock}, $self->{buf}, $BUFSIZ, length($self->{buf}) );
-    return $done if $done;
-
-    my $rin = '';
-    vec($rin, fileno($self->{sock}), 1) = 1;
-    unless (select($rin, undef, undef, $self->{timeout})) {
-        Carp::confess("[$self->{working_command}] Cannot read form socket: $self->{server}");
-    }
-    sysread( $self->{sock}, $self->{buf}, $BUFSIZ, length($self->{buf}) )
-        or Carp::confess("[$self->{working_command}] Cannot read from socket: $self->{server}");
-}
-
 sub _read_reply {
     my ($self, ) = @_;
 
-    my $type;
-    while (1) {
-        if ($self->{buf} =~ s/^(.)//) {
-            $type = $1;
-            last;
-        } else {
-            $self->_read_more();
-        }
-    }
+    my $sock = $self->{sock};
+    my $buf = <$sock>;
+    my $type = substr($buf, 0, 1);
+    $buf = substr($buf, 1, -2); # -2 means length("\015\012")
 
     # With an error message (the first byte of the reply will be "-")
     # With a single line reply (the first byte of the reply will be "+)
@@ -140,45 +96,33 @@ sub _read_reply {
     # With multi-bulk data, a list of values (the first byte of the reply will be "*")
     # With an integer number (the first byte of the reply will be ":")
     if ( $type eq '-' ) {
-        Carp::croak("[$self->{working_command}] $self->{buf}");    # error message
+        Carp::croak("[$self->{working_command}] $buf");    # error message
     }
     elsif ( $type eq '+' ) {                  # Single line reply
-        while (1) {
-            if ($self->{buf} =~ s/^(.+?)\015\012//) {
-                return $1;
-            } else {
-                $self->_read_more();
-            }
-        }
+        return $buf;
     }
     elsif ( $type eq '$' ) {                  # bulk data
         if ( $self->{working_command} eq 'INFO' ) {
             my $hash;
-            foreach my $l ( split( /\015\012/, $self->_read_bulk_reply() ) ) {
+            foreach my $l ( split( /\015\012/, $self->_read_bulk_reply($buf) ) ) {
                 my ( $n, $v ) = split( /:/, $l, 2 );
                 $hash->{$n} = $v;
             }
             return $hash;
         }
         elsif ( $self->{working_command} eq 'KEYS' ) {
-            my $keys = $self->_read_bulk_reply();
+            my $keys = $self->_read_bulk_reply($buf);
             return split(/\032/, $keys) if $keys; # \032 means SPACE
             return undef;
         } else {
-            return $self->_read_bulk_reply();
+            return $self->_read_bulk_reply($buf);
         }
     }
     elsif ( $type eq '*' ) {                  # multi-bulk reply
-        return $self->_read_multi_bulk();
+        return $self->_read_multi_bulk($buf);
     }
     elsif ( $type eq ':' ) {                  # integer number
-        while (1) {
-            if ($self->{buf} =~ s/^(-?[0-9]+?)\015\012//) {
-                return $1;
-            } else {
-                $self->_read_more();
-            }
-        }
+        return 0+$buf;
     }
     else {
         Carp::confess( "unknown type: $type", $self->__read_line() );
@@ -186,42 +130,16 @@ sub _read_reply {
 }
 
 sub _read_bulk_reply {
-    my ($self) = @_;
-
-    my $n;
-    while (1) {
-        if ($self->{buf} =~ s/^(-?[0-9]+?)\015\012//) {
-            $n = $1;
-            last;
-        } else {
-            $self->_read_more();
-        }
-    }
+    my ($self, $n) = @_;
     return undef if $n < 0;
 
-    while (1) {
-        if (length($self->{buf}) >= $n+2) {
-            my $res = substr($self->{buf}, 0, $n);
-            $self->{buf} = substr($self->{buf}, $n+2); # skip \r\n
-            return $res;
-        } else {
-            $self->_read_more();
-        }
-    }
+    $self->{sock}->read(my $buf, $n+2) == $n+2
+        or Carp::confess("[$self->{working_command}] cannot read bulk reply: $!");
+    return substr($buf, 0, $n);
 }
 
 sub _read_multi_bulk {
-    my ($self) = @_;
-
-    my $n;
-    while (1) {
-        if ($self->{buf} =~ s/^(-?[0-9]+?)\015\012//) {
-            $n = $1;
-            last;
-        } else {
-            $self->_read_more();
-        }
-    }
+    my ($self, $n) = @_;
     return undef if $n < 0;
 
     my @res;
@@ -246,15 +164,27 @@ __END__
 
 =head1 NAME
 
-Redis::Fast -
+Redis::YA -
 
 =head1 SYNOPSIS
 
-  use Redis::Fast;
+  use Redis::YA;
 
 =head1 DESCRIPTION
 
-Redis::Fast is
+Redis::YA is yet another redis client library.
+
+=head1 Difference between L<Redis>
+
+=over 4
+
+=item Do not mention the utf8 flag
+
+=item Do not use $ENV{REDIS_SERVER}
+
+I dislike to load configuration from envrionment variables.
+
+=back
 
 =head1 AUTHOR
 
