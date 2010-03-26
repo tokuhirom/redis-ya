@@ -2,3 +2,4 @@ Makefile
 inc/
 .c
 ppport.h
+nytprof.out
