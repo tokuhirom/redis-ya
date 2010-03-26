@@ -1,14 +1,13 @@
 # NAME
 
-Redis::YA -
-
-# SYNOPSIS
-
-  use Redis::YA;
+Redis::YA - yet another redis client for perl
 
 # DESCRIPTION
 
 Redis::YA is yet another redis client library.
+But, *DO NOT USE THIS*.
+
+This is just so experimental.
 
 # AUTHOR
 
